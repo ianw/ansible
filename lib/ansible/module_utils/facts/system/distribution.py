@@ -320,12 +320,33 @@ class DistributionFiles:
         debian_facts = {}
         if 'Debian' in data or 'Raspbian' in data:
             debian_facts['distribution'] = 'Debian'
-            release = re.search(r"PRETTY_NAME=[^(]+ \(?([^)]+?)\)", data)
+            release = re.search(r'PRETTY_NAME="(.*)"', data)
             if release:
-                debian_facts['distribution_release'] = release.groups()[0]
+                pretty_name = release.groups()[0]
+                # This is the release case of a line like:
+                #  PRETTY_NAME="Debian GNU/Linux 10 (buster)"
+                p = pretty_name.find('(')
+                if p > 0:
+                    debian_facts['distribution_release'] = pretty_name[p+1:-1]
+                else:
+                    # When the next release has been named and Debian
+                    # enters a freeze, base-files will build in
+                    # unstable (sid) and be migrated back into the
+                    # testing repository after it meets criteria.  To
+                    # indicate this PRETTY_NAME is codename/sid which
+                    # can be interpreted as "unstable is now in freeze
+                    # and only migrating things relevant for
+                    # codename".  During the freeze, you can't really
+                    # tell from PRETTY_NAME if you're on unstable or
+                    # testing; but they are basically the same thing.
+                    # The sensible thing to do here is to report this
+                    # as the new codename. e.g. handle line looking
+                    # like:
+                    #  PRETTY_NAME="Debian GNU/Linux bullseye/sid"
+                    debian_facts['distribution_release'] = pretty_name[17:].split('/')[0]
 
             # Last resort: try to find release from tzdata as either lsb is missing or this is very old debian
-            if collected_facts['distribution_release'] == 'NA' and 'Debian' in data:
+            elif collected_facts['distribution_release'] == 'NA' and 'Debian' in data:
                 dpkg_cmd = self.module.get_bin_path('dpkg')
                 if dpkg_cmd:
                     cmd = "%s --status tzdata|grep Provides|cut -f2 -d'-'" % dpkg_cmd
